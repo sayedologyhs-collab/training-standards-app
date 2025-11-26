@@ -8,7 +8,7 @@ import PyPDF2
 from docx import Document
 
 # --- إعدادات الصفحة ---
-st.set_page_config(page_title="مستشار تقييم الحقائب التدريبية الافتراضي ", layout="wide", page_icon="🎓")
+st.set_page_config(page_title=" مستشار تقييم الحقائب التدريبية الافتراضي مؤسسة علمني  ", layout="wide", page_icon="🎓")
 
 # --- تنسيق CSS ---
 st.markdown("""
