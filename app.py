@@ -96,7 +96,8 @@ for i, (domain, standards) in enumerate(structure.items()):
             with st.container():
                 st.markdown(f"#### 📌 {standard}")
                 for criterion in criteria_list:
-                    c1, c2, c3 = st.columns()
+                    # التصحيح هنا: تحديد عرض الأعمدة كقائمة
+                    c1, c2, c3 = st.columns([3, 2, 2])
                     with c1:
                         st.write(f"- {criterion}")
                     with c2:
@@ -106,7 +107,7 @@ for i, (domain, standards) in enumerate(structure.items()):
                             ["متحقق", "متحقق جزئياً", "غير متحقق"], 
                             horizontal=True, 
                             key=key,
-                            index=2 # الافتراضي غير متحقق
+                            index=2 
                         )
                     with c3:
                         notes = st.text_input("ملاحظات", key=f"notes_{key}", placeholder="أضف ملاحظة...")
@@ -134,9 +135,9 @@ if st.button("إصدار التقرير النهائي"):
         # حسابات النسب
         total_score = df_res['الدرجة'].sum()
         max_score = len(df_res) * 2
-        percentage = (total_score / max_score) * 100
+        percentage = (total_score / max_score) * 100 if max_score > 0 else 0
         
-        # عرض المؤشرات العلوية
+        # عرض المؤشرات العلوية - التصحيح هنا بإضافة الرقم 3
         c1, c2, c3 = st.columns(3)
         c1.metric("نسبة المطابقة العامة", f"{percentage:.1f}%")
         c2.metric("عدد المعايير المتحققة", len(df_res[df_res['النتيجة']=="متحقق"]))
@@ -144,8 +145,9 @@ if st.button("إصدار التقرير النهائي"):
         
         # رسم بياني بسيط
         st.subheader("الأداء حسب المجالات")
-        domain_scores = df_res.groupby("المجال")['الدرجة'].sum().reset_index()
-        st.bar_chart(domain_scores.set_index("المجال"))
+        if not df_res.empty:
+            domain_scores = df_res.groupby("المجال")['الدرجة'].sum().reset_index()
+            st.bar_chart(domain_scores.set_index("المجال"))
         
         # جدول التفاصيل (فلترة للغير متحقق فقط)
         st.subheader("⚠️ فرص التحسين (المعايير غير المتحققة)")
