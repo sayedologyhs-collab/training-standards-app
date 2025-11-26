@@ -6,9 +6,11 @@ import io
 from datetime import datetime
 import PyPDF2
 from docx import Document
+from PIL import Image
+import os
 
 # --- إعدادات الصفحة ---
-st.set_page_config(page_title=" مستشار تقييم الحقائب التدريبية الافتراضي مؤسسة علمني  ", layout="wide", page_icon="🎓")
+st.set_page_config(page_title="المستشار الذكي لتقييم الأدلة التدريبية - مؤسسة علمني", layout="wide", page_icon="🎓")
 
 # --- تنسيق CSS ---
 st.markdown("""
@@ -21,6 +23,8 @@ st.markdown("""
     .recommendation-box {background-color: #fff3cd; border-right: 5px solid #ffc107; padding: 15px; margin-bottom: 10px; border-radius: 5px; color: #856404;}
     .example-box {background-color: #e2e8f0; border-right: 5px solid #4a5568; padding: 10px; margin-top: 5px; border-radius: 5px; font-size: 0.9em; color: #2d3748;}
     .report-container {background-color: #f8f9fa; padding: 25px; border-radius: 10px; border: 1px solid #ddd; margin-top: 20px;}
+    .logo-text {font-size: 1.5rem; font-weight: bold; color: #2c3e50; margin-top: 10px;}
+    .sub-logo-text {font-size: 1.1rem; color: #7f8c8d;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -43,7 +47,7 @@ def extract_text_from_word(file):
     except Exception as e:
         return ""
 
-# --- قاعدة المعرفة (الخبير التربوي) - محدثة بالأمثلة ---
+# --- قاعدة المعرفة (الخبير التربوي) ---
 @st.cache_data
 def get_expert_knowledge():
     return {
@@ -166,7 +170,18 @@ def generate_smart_narrative(df, prog_name):
     return report
 
 # --- الواجهة الرئيسية ---
-st.title("🎓 المستشار الذكي لتقييم الحقائب التدريبية")
+col_header1, col_header2 = st.columns([1, 4])
+
+with col_header1:
+    if os.path.exists("logo.png"):
+        st.image("logo.png", width=130)
+    else:
+        st.info("📷 (ارفع ملف logo.png)")
+
+with col_header2:
+    st.markdown('<div class="logo-text">الاستشاري الافتراضي لتقييم الأدلة التدريبية</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-logo-text">مؤسسة علمني</div>', unsafe_allow_html=True)
+
 st.markdown("---")
 
 col1, col2 = st.columns([2, 1])
@@ -206,17 +221,15 @@ if uploaded_file:
             
             st.progress(int(percentage))
             
-            # --- الجديد: التحليل البصري المتقدم ---
+            # الرسوم البيانية
             st.markdown("---")
             st.header("📈 التحليل البصري للأداء")
             
             col_graph1, col_graph2 = st.columns(2)
             
             with col_graph1:
-                st.subheader("توازن مجالات الحقيبة (Radar Chart)")
-                # تجهيز البيانات للمخطط الراداري
+                st.subheader("توازن مجالات الحقيبة")
                 radar_data = df_res.groupby('المجال')['الدرجة'].mean().reset_index()
-                # تحويل الدرجة إلى نسبة مئوية (الدرجة القصوى 2)
                 radar_data['النسبة'] = (radar_data['الدرجة'] / 2) * 100
                 
                 fig_radar = go.Figure(data=go.Scatterpolar(
@@ -232,19 +245,18 @@ if uploaded_file:
                 st.plotly_chart(fig_radar, use_container_width=True)
                 
             with col_graph2:
-                st.subheader("تفاصيل الأداء (Bar Chart)")
+                st.subheader("تفاصيل الأداء")
                 fig_bar = px.bar(df_res, x='المعيار', y='الدرجة', color='النتيجة',
-                                 color_discrete_map={'متحقق': '#4ade80', 'متحقق جزئياً': '#facc15', 'غير متحقق': '#f87171'},
-                                 title="حالة كل معيار")
+                                 color_discrete_map={'متحقق': '#4ade80', 'متحقق جزئياً': '#facc15', 'غير متحقق': '#f87171'})
                 st.plotly_chart(fig_bar, use_container_width=True)
 
-            # 2. التقرير السردي
+            # التقرير السردي
             st.markdown("---")
             st.header("📝 التقرير الاستشاري")
             smart_report = generate_smart_narrative(df_res, uploaded_file.name)
             st.markdown(f"""<div class="report-container">{smart_report}</div>""", unsafe_allow_html=True)
             
-            # 3. التوصيات والنماذج التطبيقية
+            # التوصيات
             st.markdown("---")
             st.header("💡 التوصيات والنماذج المقترحة")
             
@@ -252,7 +264,6 @@ if uploaded_file:
             if not issues.empty:
                 for i, row in issues.iterrows():
                     with st.expander(f"⭕ {row['المعيار']} ({row['النتيجة']})"):
-                        # التوصية
                         st.markdown(f"""
                         <div class="recommendation-box">
                             <strong>💡 توصية الخبير:</strong><br>
@@ -260,7 +271,6 @@ if uploaded_file:
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # النموذج المقترح (الإضافة الجديدة)
                         st.markdown(f"""
                         <div class="example-box">
                             <strong>📌 نموذج تطبيقي مقترح:</strong><br>
@@ -270,7 +280,7 @@ if uploaded_file:
             else:
                 st.info("الحقيبة مكتملة ومثالية!")
 
-            # 4. التحميل
+            # التحميل
             st.markdown("---")
             excel_buffer = io.BytesIO()
             with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
@@ -282,6 +292,6 @@ if uploaded_file:
             st.download_button(
                 label="📥 تحميل التقرير الشامل (Excel)",
                 data=excel_buffer.getvalue(),
-                file_name="Advanced_Report.xlsx",
+                file_name="EduTrain_Report.xlsx",
                 mime="application/vnd.ms-excel"
             )
