@@ -1,171 +1,239 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import io
+from datetime import datetime
+import PyPDF2
+from docx import Document
 
-# --- إعدادات الصفحة ---
-st.set_page_config(page_title="نظام تقييم الحقائب التدريبية", layout="wide", page_icon="📊")
+# إعدادات الصفحة
+st.set_page_config(page_title="نظام التقييم الآلي للحقائب التدريبية", layout="wide", page_icon="🤖")
 
-# --- تنسيق CSS مخصص للغة العربية والجمالية ---
+# تنسيق CSS
 st.markdown("""
 <style>
     .main {direction: rtl;}
-    h1, h2, h3, p, div {text-align: right; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;}
-    .stRadio > label {display: none;}
-    .stSelectbox > label {display: none;}
-    div[data-testid="stExpander"] details summary p {font-size: 1.2rem; font-weight: bold;}
-    .metric-card {background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center;}
-    div[data-testid="stMarkdownContainer"] ul {list-style-position: inside; padding-right: 20px;}
+    h1, h2, h3, p, div, label {text-align: right; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;}
+    .stAlert {text-align: right;}
+    .metric-card {background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                  color: white; padding: 20px; border-radius: 15px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1);}
 </style>
 """, unsafe_allow_html=True)
 
-# --- تحميل البيانات (هيكل المعايير) ---
-@st.cache_data
-def load_data():
-    data = {
-        "المجال الأول: الأهداف": {
-            "المعيار 1: وضوح الأهداف": [
-                "هل الهدف العام يصيغ ما يسعى البرنامج لتحقيقه بدقة؟",
-                "هل نواتج التعلم قابلة للقياس والملاحظة؟",
-                "هل تتناسب الأهداف مع الزمن المتاح؟"
-            ],
-            "المعيار 2: شمولية الأهداف": [
-                "هل تغطي الأهداف الجوانب المعرفية والمهارية والوجدانية؟"
-            ]
-        },
-        "المجال الثاني: المحتوى": {
-            "المعيار 1: ملاءمة المحتوى": [
-                "هل المحتوى حديث ومواكب للمستجدات؟",
-                "هل التسلسل المنطقي للموضوعات سليم؟"
-            ],
-            "المعيار 2: صحة المحتوى": [
-                "خلو المحتوى من الأخطاء العلمية.",
-                "خلو المحتوى من الأخطاء اللغوية والإملائية."
-            ]
-        },
-         "المجال الثالث: الوسائل والأنشطة": {
-            "المعيار 1: تنوع الأنشطة": [
-                "هل توجد أنشطة تفاعلية تشرك المتدربين؟",
-                "هل الوسائل البصرية واضحة وذات جودة عالية؟"
-            ]
-        },
-         "المجال الرابع: الإخراج الفني": {
-            "المعيار 1: التصميم": [
-                "هل الغلاف جذاب ويحتوي على البيانات الأساسية؟",
-                "هل التنسيق الداخلي مريح للقراءة؟"
-            ]
-        },
-         "المجال الخامس: التقييم": {
-            "المعيار 1: أدوات القياس": [
-                "هل توجد اختبارات قبلية وبعدية؟",
-                "هل توجد استمارة لتقييم رضا المتدربين؟"
-            ]
-        }
-    }
-    return data
+# دالة استخراج النص من PDF
+def extract_text_from_pdf(file):
+    try:
+        pdf_reader = PyPDF2.PdfReader(file)
+        text = ""
+        for page in pdf_reader.pages:
+            text += page.extract_text()
+        return text
+    except Exception as e:
+        return f"خطأ في قراءة PDF: {str(e)}"
 
-# --- الواجهة الرئيسية ---
-st.title("📊 نظام التقييم الذكي للحقائب التدريبية")
+# دالة استخراج النص من Word
+def extract_text_from_word(file):
+    try:
+        doc = Document(file)
+        text = "\n".join([para.text for para in doc.paragraphs])
+        return text
+    except Exception as e:
+        return f"خطأ في قراءة Word: {str(e)}"
+
+# دالة التقييم الذكي
+def auto_evaluate(text, criterion):
+    text_lower = text.lower()
+    
+    rules = {
+        "الهدف العام": ["الهدف العام", "يهدف البرنامج", "غرض البرنامج"],
+        "نواتج التعلم": ["نواتج التعلم", "الأهداف التعليمية", "يتوقع من المتدرب", "في نهاية"],
+        "المحتوى": ["المحتوى", "الموضوعات", "المواد التدريبية", "الوحدات"],
+        "الأنشطة": ["نشاط", "تمرين", "تطبيق عملي", "ورشة عمل", "دراسة حالة"],
+        "التقييم": ["اختبار", "تقييم", "قياس", "استبيان", "بطاقة ملاحظة"],
+        "المراجع": ["المراجع", "المصادر", "المراجع العلمية", "قائمة المراجع"],
+        "دليل المدرب": ["دليل المدرب", "إرشادات المدرب", "ملاحظات للميسر"],
+        "دليل المتدرب": ["دليل المتدرب", "كتيب المتدرب", "مذكرة المتدرب"]
+    }
+    
+    found_keywords = []
+    for category, keywords in rules.items():
+        if criterion.find(category) != -1 or any(kw in criterion for kw in keywords):
+            matches = sum(1 for kw in keywords if kw in text_lower)
+            if matches > 0:
+                found_keywords.append((category, matches))
+    
+    total_matches = sum(m[1] for m in found_keywords)
+    
+    if total_matches >= 3:
+        return "متحقق", "✓ وجدت أدلة قوية على تحقق المعيار"
+    elif total_matches >= 1:
+        return "متحقق جزئياً", "◐ وجدت بعض المؤشرات"
+    else:
+        return "غير متحقق", "✗ لم يتم العثور على دليل واضح"
+
+@st.cache_data
+def load_standards():
+    standards = {
+        "المجال الأول: الأهداف": [
+            "يحدد الهدف العام ما يسعى البرنامج إلى تحقيقه",
+            "نواتج التعلم واضحة وقابلة للقياس",
+            "تتناسب الأهداف مع الزمن المتاح",
+            "تتنوع نواتج التعلم (معرفية، مهارية، وجدانية)"
+        ],
+        "المجال الثاني: المحتوى": [
+            "المحتوى حديث ومواكب للمستجدات",
+            "التسلسل المنطقي للموضوعات سليم",
+            "خلو المحتوى من الأخطاء العلمية",
+            "يرتبط المحتوى بالأهداف المحددة"
+        ],
+        "المجال الثالث: الوسائل والأنشطة": [
+            "توجد أنشطة تفاعلية متنوعة",
+            "الوسائل البصرية واضحة وجذابة",
+            "الأنشطة مرتبطة بنواتج التعلم",
+            "توجد تعليمات واضحة لتنفيذ الأنشطة"
+        ],
+        "المجال الرابع: المادة التدريبية": [
+            "يتوفر دليل للمدرب شامل",
+            "يتوفر دليل للمتدرب واضح",
+            "توجد مادة مرجعية داعمة",
+            "توجد أوراق عمل وعروض تقديمية"
+        ],
+        "المجال الخامس: التقييم": [
+            "توجد أدوات تقييم قبلي وبعدي",
+            "أدوات التقييم مرتبطة بالأهداف",
+            "توجد استمارة تقييم رضا المتدربين",
+            "معايير التقييم واضحة ومحددة"
+        ]
+    }
+    return standards
+
+st.title("🤖 نظام التقييم الآلي الذكي للحقائب التدريبية")
+st.markdown("### 📤 قم برفع ملف الحقيبة التدريبية للحصول على تقييم فوري ذكي")
 st.markdown("---")
 
-# بيانات الحقيبة
-with st.expander("📝 بيانات البرنامج التدريبي", expanded=True):
-    col1, col2 = st.columns(2)
-    with col1:
-        prog_name = st.text_input("اسم البرنامج التدريبي")
-        trainer_name = st.text_input("اسم المدرب / المعد")
-    with col2:
-        date = st.date_input("تاريخ التقييم")
-        evaluator = st.text_input("اسم المقيم")
+col1, col2 = st.columns([2, 1])
 
-# تحميل البيانات
-structure = load_data()
-scores = {"متحقق": 2, "متحقق جزئياً": 1, "غير متحقق": 0}
-results = []
+with col1:
+    uploaded_file = st.file_uploader(
+        "اختر ملف الحقيبة التدريبية (PDF, Word)",
+        type=['pdf', 'docx', 'doc'],
+        help="يدعم التطبيق: دليل المدرب، دليل المتدرب، أو الحقيبة الكاملة"
+    )
 
-st.header("📋 قائمة التحقق من المعايير")
+with col2:
+    st.info("💡 **نصيحة:**\nلأفضل النتائج، ارفع ملف الحقيبة الكامل")
 
-# إنشاء Tabs للمجالات
-tabs = st.tabs(list(structure.keys()))
-
-# حلقة تكرارية لبناء الواجهة ديناميكياً
-for i, (domain, standards) in enumerate(structure.items()):
-    with tabs[i]:
-        st.subheader(domain)
-        for standard, criteria_list in standards.items():
-            with st.container():
-                st.markdown(f"#### 📌 {standard}")
-                for criterion in criteria_list:
-                    # التصحيح هنا: تحديد عرض الأعمدة كقائمة
-                    c1, c2, c3 = st.columns([3, 2, 2])
-                    with c1:
-                        st.write(f"- {criterion}")
-                    with c2:
-                        key = f"{domain}_{standard}_{criterion}"
-                        status = st.radio(
-                            "الحالة", 
-                            ["متحقق", "متحقق جزئياً", "غير متحقق"], 
-                            horizontal=True, 
-                            key=key,
-                            index=2 
-                        )
-                    with c3:
-                        notes = st.text_input("ملاحظات", key=f"notes_{key}", placeholder="أضف ملاحظة...")
-                    
-                    # حفظ النتيجة
-                    results.append({
-                        "المجال": domain,
-                        "المعيار": standard,
-                        "المؤشر": criterion,
-                        "النتيجة": status,
-                        "الدرجة": scores[status],
-                        "الملاحظات": notes
-                    })
-                st.markdown("---")
-
-# --- قسم النتائج والتقرير ---
-st.header("📈 تقرير النتائج")
-
-if st.button("إصدار التقرير النهائي"):
-    if not prog_name:
-        st.warning("يرجى إدخال اسم البرنامج التدريبي أولاً.")
+if uploaded_file is not None:
+    
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    status_text.text("⏳ جاري قراءة الملف...")
+    progress_bar.progress(20)
+    
+    file_text = ""
+    if uploaded_file.name.endswith('.pdf'):
+        file_text = extract_text_from_pdf(uploaded_file)
+    elif uploaded_file.name.endswith(('.docx', '.doc')):
+        file_text = extract_text_from_word(uploaded_file)
     else:
-        df_res = pd.DataFrame(results)
-        
-        # حسابات النسب
-        total_score = df_res['الدرجة'].sum()
-        max_score = len(df_res) * 2
-        percentage = (total_score / max_score) * 100 if max_score > 0 else 0
-        
-        # عرض المؤشرات العلوية - التصحيح هنا بإضافة الرقم 3
-        c1, c2, c3 = st.columns(3)
-        c1.metric("نسبة المطابقة العامة", f"{percentage:.1f}%")
-        c2.metric("عدد المعايير المتحققة", len(df_res[df_res['النتيجة']=="متحقق"]))
-        c3.metric("نقاط تحتاج تحسين", len(df_res[df_res['النتيجة']!="متحقق"]))
-        
-        # رسم بياني بسيط
-        st.subheader("الأداء حسب المجالات")
-        if not df_res.empty:
-            domain_scores = df_res.groupby("المجال")['الدرجة'].sum().reset_index()
-            st.bar_chart(domain_scores.set_index("المجال"))
-        
-        # جدول التفاصيل (فلترة للغير متحقق فقط)
-        st.subheader("⚠️ فرص التحسين (المعايير غير المتحققة)")
-        improvement_df = df_res[df_res['النتيجة'] != "متحقق"][['المجال', 'المعيار', 'المؤشر', 'النتيجة', 'الملاحظات']]
-        
-        if not improvement_df.empty:
-            st.table(improvement_df)
-        else:
-            st.success("🎉 تهانينا! جميع المعايير متحققة.")
-
-        # تصدير النتائج
-        excel_buffer = io.BytesIO()
-        with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
-            df_res.to_excel(writer, index=False, sheet_name='التقرير التفصيلي')
-            
-        st.download_button(
-            label="📥 تحميل التقرير (Excel)",
-            data=excel_buffer.getvalue(),
-            file_name=f"Evaluation_Report.xlsx",
-            mime="application/vnd.ms-excel"
-        )
+        st.warning("نوع الملف غير مدعوم")
+        st.stop()
+    
+    progress_bar.progress(40)
+    
+    status_text.text("🔍 جاري التحليل الذكي للمحتوى...")
+    progress_bar.progress(60)
+    
+    standards = load_standards()
+    results = []
+    
+    for domain, criteria_list in standards.items():
+        for criterion in criteria_list:
+            status, note = auto_evaluate(file_text, criterion)
+            results.append({
+                "المجال": domain,
+                "المعيار": criterion,
+                "النتيجة": status,
+                "الدرجة": 2 if status == "متحقق" else (1 if status == "متحقق جزئياً" else 0),
+                "ملاحظة النظام": note
+            })
+    
+    progress_bar.progress(100)
+    status_text.text("✅ اكتمل التحليل!")
+    
+    st.success(f"✓ تم تحليل الملف بنجاح: **{uploaded_file.name}**")
+    
+    df_results = pd.DataFrame(results)
+    
+    total_score = df_results['الدرجة'].sum()
+    max_score = len(df_results) * 2
+    percentage = (total_score / max_score) * 100
+    
+    achieved = len(df_results[df_results['النتيجة'] == 'متحقق'])
+    partial = len(df_results[df_results['النتيجة'] == 'متحقق جزئياً'])
+    not_achieved = len(df_results[df_results['النتيجة'] == 'غير متحقق'])
+    
+    st.markdown("---")
+    st.header("📊 نتائج التقييم الآلي")
+    
+    c1, c2, c3, c4 = st.columns(4)
+    
+    c1.markdown(f"""
+    <div class="metric-card">
+        <h2 style="color: white; margin: 0;">{percentage:.1f}%</h2>
+        <p style="margin: 5px 0; opacity: 0.9;">نسبة المطابقة</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    c2.metric("✅ متحقق كلياً", achieved)
+    c3.metric("◐ متحقق جزئياً", partial)
+    c4.metric("❌ غير متحقق", not_achieved)
+    
+    st.subheader("📈 توزيع النتائج")
+    fig = go.Figure(data=[go.Pie(
+        labels=['متحقق', 'متحقق جزئياً', 'غير متحقق'],
+        values=[achieved, partial, not_achieved],
+        hole=.4,
+        marker_colors=['#10b981', '#f59e0b', '#ef4444']
+    )])
+    fig.update_layout(showlegend=True, height=350)
+    st.plotly_chart(fig, use_container_width=True)
+    
+    st.subheader("📊 الأداء حسب المجالات")
+    domain_scores = df_results.groupby('المجال')['الدرجة'].sum().reset_index()
+    
+    fig2 = px.bar(domain_scores, x='المجال', y='الدرجة', color='الدرجة', text='الدرجة')
+    fig2.update_traces(textposition='outside')
+    fig2.update_layout(height=400, showlegend=False)
+    st.plotly_chart(fig2, use_container_width=True)
+    
+    st.subheader("📋 التفاصيل الكاملة")
+    
+    filter_status = st.multiselect(
+        "فلترة حسب الحالة:",
+        ['متحقق', 'متحقق جزئياً', 'غير متحقق'],
+        default=['غير متحقق', 'متحقق جزئياً']
+    )
+    
+    filtered_df = df_results[df_results['النتيجة'].isin(filter_status)]
+    st.dataframe(filtered_df, use_container_width=True, height=400)
+    
+    st.subheader("💡 اقتراحات التحسين الذكية")
+    
+    improvements = df_results[df_results['النتيجة'] != 'متحقق']
+    
+    if not improvements.empty:
+        for domain in improvements['المجال'].unique():
+            with st.expander(f"🔹 {domain}"):
+                domain_issues = improvements[improvements['المجال'] == domain]
+                for _, row in domain_issues.iterrows():
+                    st.markdown(f"**❗ {row['المعيار']}**")
+                    st.markdown(f"- الحالة: `{row['النتيجة']}`")
+                    st.markdown(f"- التوصية: أضف أو وضح هذا العنصر")
+                    st.markdown("---")
+    else:
+        st.success("🎉 ممتاز! جميع المعايير متحققة")
+    
+    st.sub
